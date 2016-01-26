@@ -1,0 +1,118 @@
+---
+title: "Machine Learning Assignment"
+author: "L-Po"
+date: "January 26, 2016"
+output: html_document
+---
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+This performance is the subject of our analysis. We will try to predict this variable, which in our dataset is labeled "classe".
+
+### Libraries
+
+In order to perform our analysis, we need to make use of certain R libraries that store relevant functions.
+
+```{r, echo=TRUE}
+library(lattice)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(caret)
+```
+
+### Reading and cleaning the data
+
+
+First we read both datasets: train and test. 
+```{r, echo=TRUE}
+training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+testing  <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+
+Next we divide the train dataset to form new train and test datasets (we set the final test dataset aside to use it at the end to evaluate the final model and we will call it "final test dataset" from now on to avoid confusion). We set seed in order to assure reproducibility. 
+
+```{r, echo=TRUE}
+set.seed(1234)
+inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+
+TrainTrain <- training[inTrain, ]
+TrainTest <- training[-inTrain, ]
+```
+
+Then we need to clean the datasets in order to analyze more reliable data as well as to improve performance (machine learning algorythms tend to be very memory consuming processes). We proceed as follows with regard to the training dataset:
+
+1) We eliminate columns with near zero variance (because they contain very little information for our models)
+2) We eliminate columns which have more than 5% of observations with missing data
+3) We eliminate the variable "X" because it merely serves as counter and therefore does not contain any valuable information
+4) We cast the variable cvtd_timestamp as numeric to avoid level mismatch between the loaded datasets (original training and testing ones).
+
+We apply the same procedures to the test dataset.
+
+```{r, echo=TRUE}
+near0var <- nearZeroVar(TrainTrain)
+TrainTrain2 <- TrainTrain[,-near0var]
+destroyer <- colSums(is.na(TrainTrain2)) <= nrow(TrainTrain2) * 0.05
+TrainTrain3 <- TrainTrain2[, destroyer]
+TrainTrain4 <- subset(TrainTrain3, select = -X)
+TrainTrain4$cvtd_timestamp <- strptime(as.character(TrainTrain4$cvtd_timestamp),"%d/%m/%Y %H:%M")
+TrainTrain4$cvtd_timestamp <- as.numeric(TrainTrain4$cvtd_timestamp)
+
+
+TrainTest2 <- TrainTest[,-near0var]
+TrainTest3 <- TrainTest2[, destroyer]
+TrainTest4 <- subset(TrainTest3, select = -X)
+TrainTest4$cvtd_timestamp <- strptime(as.character(TrainTest4$cvtd_timestamp),"%d/%m/%Y %H:%M")
+TrainTest4$cvtd_timestamp <- as.numeric(TrainTest4$cvtd_timestamp)
+```
+
+We can take a look at the variable of interest that we try to predict, namely "classe" which tells us how well the given exercise is performed. 
+
+```{r, echo=TRUE}
+barplot(table(TrainTrain4$classe))
+```
+
+### Models
+
+We try to fit the first model: decision tree. 
+```{r, echo=TRUE}
+model1 <- rpart(classe ~ .,data=TrainTrain4, method = "class") 
+pred1 <- predict(model1,newdata = TrainTest4, type="class")
+confusionMatrix(pred1,TrainTest4$classe)
+```
+
+With this model it is very likely we would have at least 80% of predictions right, but we can do better than that. Let's try another model: random forrest. 
+
+```{r, echo=TRUE}
+model2 <- randomForest(classe ~. , data=TrainTrain4, importance=T)
+pred2 <- predict(model2,newdata = TrainTest4, type="class")
+confusionMatrix(pred2,TrainTest4$classe)
+```
+
+That looks better. Now we can take a look at the expected out of sample error:
+
+```{r, echo=TRUE}
+accur <- confusionMatrix(pred2,TrainTest4$classe)$overall[[1]]
+
+Err <- 1 - accur
+Err
+```
+
+### Final evaluation
+
+Finally we test our model on the final dataset. First we need to make the same adjustments as in the previous datasets.
+
+```{r, echo=TRUE}
+Test <- testing[,-near0var]
+Test2 <- Test[, destroyer]
+Test3 <- subset(Test2, select = -X)
+Test3$cvtd_timestamp <- strptime(as.character(Test3$cvtd_timestamp),"%d/%m/%Y %H:%M")
+Test3$cvtd_timestamp <- as.numeric(Test3$cvtd_timestamp)
+
+
+finalpred <- predict(model2, newdata = Test3)
+finalpred
+```
+
